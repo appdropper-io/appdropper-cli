@@ -1,0 +1,59 @@
+name: Publish to npm
+
+# Releases are a git tag and nothing else. There is no npm token anywhere in
+# this repository or in GitHub Secrets: npm verifies the workflow itself over
+# OIDC ("trusted publishing"), which is why `id-token: write` below is the only
+# credential involved. Configure the other half at
+# npmjs.com → appdropper package → Settings → Trusted publishing:
+#   organization: appdropper-io   repository: appdropper-cli
+#   workflow: publish.yml         allowed action: npm publish
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for OIDC. Without it npm cannot verify who is publishing.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing needs npm 11.5.1 or newer; pinning to latest keeps
+      # this working as the runner image drifts.
+      - name: Use an npm new enough for trusted publishing
+        run: npm install -g npm@latest
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # A tag that disagrees with package.json publishes the wrong version
+      # under the right name, which cannot be undone — npm versions are
+      # immutable. Cheaper to fail here.
+      - name: Verify the tag matches package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies $TAG but package.json says $PKG"
+            exit 1
+          fi
+          echo "Publishing $PKG"
+
+      # Smoke-test the built binary before it reaches the registry.
+      - name: Sanity-check the build
+        run: |
+          node dist/index.js --version
+          node dist/index.js --help > /dev/null
+
+      - run: npm publish

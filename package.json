@@ -1,0 +1,54 @@
+{
+  "name": "appdropper",
+  "version": "1.0.1",
+  "description": "Upload .apk and .ipa builds to App Dropper from your terminal or CI pipeline.",
+  "keywords": [
+    "appdropper",
+    "apk",
+    "ipa",
+    "beta",
+    "testflight",
+    "diawi",
+    "ci",
+    "build-distribution",
+    "fastlane",
+    "flutter",
+    "react-native"
+  ],
+  "homepage": "https://appdropper.io/help/ci-cd-uploads",
+  "bugs": {
+    "url": "https://appdropper.io/contact"
+  },
+  "license": "MIT",
+  "author": "App Dropper",
+  "type": "commonjs",
+  "bin": {
+    "appdropper": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "typescript": "^5.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appdropper-io/appdropper-cli.git"
+  }
+}
