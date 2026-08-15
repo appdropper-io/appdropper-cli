@@ -64,16 +64,21 @@ export async function loginCommand(args: ParsedArgs): Promise<void> {
       continue;
     }
 
+    const appNames = granted.app_names ?? [];
     saveCredential(base, {
       token: granted.access_token,
-      app_id: granted.app_id,
-      app_name: granted.app_name,
+      app_ids: granted.app_ids ?? [],
+      app_names: appNames,
       hint: granted.hint,
       expires_at: granted.expires_at,
     });
 
     info();
-    success(`Signed in. This machine can now upload builds of ${color.bold(granted.app_name)}.`);
+    success(
+      `Signed in. This machine can now upload builds to ${color.bold(
+        appNames.length ? appNames.join(", ") : "your apps"
+      )}.`
+    );
     info(`  ${color.dim("Token saved to")} ${configPath()} ${color.dim("(chmod 600)")}`);
     info(
       `  ${color.dim("Expires")}        ${new Date(granted.expires_at).toLocaleDateString(
@@ -96,7 +101,9 @@ export async function logoutCommand(): Promise<void> {
   }
   clearCredential(base);
   success(
-    `Removed the saved token for ${existing.app_name || base}. It stays valid until you revoke it in the dashboard.`
+    `Removed the saved token for ${
+      existing.app_names?.length ? existing.app_names.join(", ") : base
+    }. It stays valid until you revoke it in the dashboard.`
   );
 }
 

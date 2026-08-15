@@ -20,8 +20,9 @@ export async function buildsCommand(args: ParsedArgs): Promise<void> {
     );
   }
 
-  // A token is scoped to one app, so `--app` is only ever a way of being
-  // explicit — "self" resolves to whatever the token points at.
+  // "self" only resolves when the token covers exactly one app; with several
+  // the server asks for an explicit ID rather than guessing. `appdropper
+  // whoami` lists them.
   const appId = flag(args, ["app", "app-id", "appId"]) || "self";
   const limit = Math.min(100, Math.max(1, Number(flag(args, ["limit"]) ?? 20) || 20));
 

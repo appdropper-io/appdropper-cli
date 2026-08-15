@@ -140,16 +140,21 @@ export interface UploadStatus {
   expires_at?: number;
 }
 
+export interface TokenApp {
+  app_id: string;
+  app_name: string;
+  bundle_id: string;
+  install_url: string;
+}
+
 export interface TokenIdentity {
   token_id: string;
   token_name: string;
   hint: string;
   scopes: string[];
   expires_at: number | null;
-  app_id: string;
-  app_name: string;
-  bundle_id: string;
-  install_url: string;
+  /** Every app this token may upload to. */
+  apps: TokenApp[];
 }
 
 export interface BuildSummary {
@@ -272,8 +277,8 @@ export class AppDropperClient {
     access_token: string;
     token_id: string;
     hint: string;
-    app_id: string;
-    app_name: string;
+    app_ids: string[];
+    app_names: string[];
     expires_at: number;
   } | null> {
     try {
@@ -287,8 +292,8 @@ export class AppDropperClient {
         access_token: string;
         token_id: string;
         hint: string;
-        app_id: string;
-        app_name: string;
+        app_ids: string[];
+        app_names: string[];
         expires_at: number;
       };
     } catch (err) {

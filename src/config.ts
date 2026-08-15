@@ -12,8 +12,9 @@ export const DEFAULT_API_URL = "https://appdropper.io/api/v1";
 
 export interface StoredCredential {
   token: string;
-  app_id: string;
-  app_name: string;
+  /** Every app the token covers — one login can now grant several. */
+  app_ids: string[];
+  app_names: string[];
   hint: string;
   expires_at: number;
 }

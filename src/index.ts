@@ -24,10 +24,10 @@ ${color.bold("USAGE")}
 
 ${color.bold("COMMANDS")}
   upload <file>        Upload a build and print its install link
-  builds list          Recent builds for this token's app
+  builds list          Recent builds (--app <id> if the token covers several)
   login                Authorize this machine in a browser
   logout               Forget the saved login on this machine
-  whoami               Show which app and token are in use
+  whoami               Show which apps and token are in use
   token rotate         Replace the current token with a fresh one
 
 ${color.bold("UPLOAD OPTIONS")}

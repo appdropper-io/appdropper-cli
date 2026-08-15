@@ -40,10 +40,17 @@ export async function whoamiCommand(args: ParsedArgs): Promise<void> {
       ? "APPDROPPER_TOKEN"
       : "saved login";
 
-  info(`  ${color.dim("App")}     ${color.bold(identity.app_name)} ${color.dim(identity.bundle_id)}`);
   info(`  ${color.dim("Token")}   ${identity.token_name} ${color.dim(identity.hint)}`);
   info(`  ${color.dim("Scopes")}  ${identity.scopes.join(", ")}`);
   info(`  ${color.dim("Source")}  ${source}`);
+  const apps = identity.apps ?? [];
+  info(`  ${color.dim("Apps")}    ${apps.length} app${apps.length === 1 ? "" : "s"}`);
+  for (const app of apps) {
+    info(`    ${color.bold(app.app_name)} ${color.dim(app.bundle_id)}`);
+  }
+  if (apps.length === 0) {
+    warn("This token doesn't cover any app you still manage. Check Settings → API tokens.");
+  }
   if (identity.expires_at) {
     const days = Math.ceil((identity.expires_at - Date.now()) / (24 * 60 * 60 * 1000));
     const when = new Date(identity.expires_at).toLocaleDateString(undefined, {
@@ -54,11 +61,10 @@ export async function whoamiCommand(args: ParsedArgs): Promise<void> {
     if (days <= 7) warn(`This token expires in ${days} day${days === 1 ? "" : "s"} (${when}).`);
     else info(`  ${color.dim("Expires")} ${when}`);
   }
-  info(`  ${color.dim("Link")}    ${color.cyan(identity.install_url)}`);
 }
 
 /**
- * Swaps the current token for a fresh one with the same name, app and validity
+ * Swaps the current token for a fresh one with the same name, apps and validity
  * window. Reachable with nothing but the token itself, so a scheduled job can
  * keep its own credential alive; a saved login is updated in place.
  */
