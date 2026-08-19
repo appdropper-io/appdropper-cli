@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { boolFlag, flag, type ParsedArgs } from "../args";
+import { detectCi } from "../ci";
 import { AppDropperClient, ApiError, uploadFile } from "../client";
 import { apiUrl, resolveToken } from "../config";
 import { CliError, EXIT } from "../errors";
@@ -71,6 +72,9 @@ export async function uploadCommand(args: ParsedArgs): Promise<void> {
       fileSize: stats.size,
       releaseNotes: notes,
       tag,
+      // Read off the runner's environment. On a laptop this is undefined and
+      // the field is simply omitted.
+      ci: detectCi(),
     });
   } catch (err) {
     throw asCliError(err);

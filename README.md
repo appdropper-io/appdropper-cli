@@ -97,6 +97,21 @@ Inside GitHub Actions the CLI also writes `install-url`, `build-id` and `qr-url`
 | `APPDROPPER_API_URL` | API base URL (default `https://appdropper.io/api/v1`) |
 | `APPDROPPER_CONFIG_DIR` | Where the saved login lives (default `~/.appdropper`) |
 | `NO_COLOR` | Disable coloured output |
+| `APPDROPPER_NO_CI_INFO` | Set to any value to stop sending pipeline details (see below) |
+
+## What your testers are told
+
+Every upload emails and push-notifies everyone on the app — managers and
+testers alike — with *"A new version is available for {your app}"*.
+
+When the CLI runs inside CI it reads the runner's environment and sends the
+provider, repository, branch, commit and a link back to the run along with the
+build, so that email can say where the version came from. GitHub Actions,
+GitLab CI, Bitrise, CircleCI, Bitbucket Pipelines, Buildkite, Travis, Azure
+Pipelines, Codemagic, Jenkins and TeamCity are recognised by name; anything
+else that sets `CI` is reported as a generic pipeline. Nothing is read from
+your repository and no credentials are involved — set `APPDROPPER_NO_CI_INFO=1`
+if you'd rather not put a branch name in a tester's inbox.
 
 ## How an upload works
 

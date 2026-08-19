@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as https from "https";
 import * as http from "http";
 import { URL } from "url";
+import type { CiInfo } from "./ci";
 
 /**
  * Everything the CLI knows how to say to App Dropper. Built on node:https
@@ -187,6 +188,8 @@ export class AppDropperClient {
     fileSize: number;
     releaseNotes?: string;
     tag?: string;
+    /** Pipeline that produced the build; quoted in the notification email. */
+    ci?: CiInfo;
   }): Promise<UploadTicket> {
     return parse(
       await request({
@@ -198,6 +201,7 @@ export class AppDropperClient {
           file_size: input.fileSize,
           release_notes: input.releaseNotes ?? "",
           tag: input.tag ?? "",
+          ...(input.ci ? { ci: input.ci } : {}),
         },
       })
     ) as UploadTicket;
