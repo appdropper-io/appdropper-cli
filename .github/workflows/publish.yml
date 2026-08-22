@@ -35,7 +35,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      # Builds and runs the full test suite (test/*.js) — a broken CLI must
+      # never reach npm just because the tag matched package.json.
+      - run: npm test
 
       # A tag that disagrees with package.json publishes the wrong version
       # under the right name, which cannot be undone — npm versions are
