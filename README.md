@@ -30,7 +30,7 @@ Requires Node 18+.
 
 ## Authenticate
 
-Generate a token under **Settings → API tokens** in your App Dropper dashboard. Each token is scoped to a single app and carries one scope, `upload:builds` — it cannot delete builds, manage testers, read billing, or reach another app.
+Generate a token under **Settings → API tokens** in your App Dropper dashboard. A token covers either all your apps (the default, including new ones: the first upload of a new bundle ID creates its app) or only the apps you pick. Either way it carries one scope, `upload:builds` — it cannot delete builds, manage testers or read billing.
 
 In CI, put it in your provider's secret store as `APPDROPPER_TOKEN`:
 
