@@ -69,6 +69,7 @@ export async function loginCommand(args: ParsedArgs): Promise<void> {
       token: granted.access_token,
       app_ids: granted.app_ids ?? [],
       app_names: appNames,
+      all_apps: granted.all_apps === true,
       hint: granted.hint,
       expires_at: granted.expires_at,
     });
@@ -76,7 +77,11 @@ export async function loginCommand(args: ParsedArgs): Promise<void> {
     info();
     success(
       `Signed in. This machine can now upload builds to ${color.bold(
-        appNames.length ? appNames.join(", ") : "your apps"
+        granted.all_apps
+          ? "all your apps, including new ones"
+          : appNames.length
+            ? appNames.join(", ")
+            : "your apps"
       )}.`
     );
     info(`  ${color.dim("Token saved to")} ${configPath()} ${color.dim("(chmod 600)")}`);

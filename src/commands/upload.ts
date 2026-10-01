@@ -1,14 +1,20 @@
 import * as fs from "fs";
-import * as path from "path";
 import { boolFlag, flag, type ParsedArgs } from "../args";
 import { detectCi } from "../ci";
-import { AppDropperClient, ApiError, uploadFile } from "../client";
+import { AppDropperClient, ApiError } from "../client";
 import { apiUrl, resolveToken } from "../config";
 import { CliError, EXIT } from "../errors";
+import {
+  BuildFileError,
+  BuildProcessingError,
+  DEFAULT_PROCESS_TIMEOUT_MS,
+  StillProcessingError,
+  TransferError,
+  inspectBuildFile,
+  uploadBuild,
+  type BuildFile,
+} from "../upload-build";
 import { color, info, out, printQr, progressBar, spinner, success } from "../ui";
-
-/** How long to wait for parsing before handing back control. */
-const DEFAULT_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 
 export async function uploadCommand(args: ParsedArgs): Promise<void> {
   const base = apiUrl();
@@ -28,22 +34,11 @@ export async function uploadCommand(args: ParsedArgs): Promise<void> {
     );
   }
 
-  const filePath = path.resolve(file);
-  let stats: fs.Stats;
+  let build: BuildFile;
   try {
-    stats = fs.statSync(filePath);
-  } catch {
-    throw new CliError(`No such file: ${filePath}`, EXIT.USAGE);
-  }
-  if (!stats.isFile()) throw new CliError(`Not a file: ${filePath}`, EXIT.USAGE);
-
-  const fileName = path.basename(filePath);
-  const extension = path.extname(fileName).toLowerCase();
-  if (extension !== ".apk" && extension !== ".ipa") {
-    throw new CliError(
-      `Only .apk and .ipa builds can be uploaded (got ${extension || "no extension"}).`,
-      EXIT.USAGE
-    );
+    build = inspectBuildFile(file);
+  } catch (err) {
+    throw asCliError(err);
   }
 
   const json = boolFlag(args, ["json"]);
@@ -55,72 +50,37 @@ export async function uploadCommand(args: ParsedArgs): Promise<void> {
   const tag = flag(args, ["tag", "group"]) ?? "";
   const timeoutMs = Number(flag(args, ["timeout"]) ?? 0) * 1000 || DEFAULT_PROCESS_TIMEOUT_MS;
 
-  const client = new AppDropperClient(base, token);
-
   if (!json) {
     info(
-      `${color.violet("App Dropper")} ${color.dim(`· ${fileName} (${humanSize(stats.size)})`)}`
+      `${color.violet("App Dropper")} ${color.dim(`· ${build.fileName} (${humanSize(build.size)})`)}`
     );
   }
 
-  // 1. Reserve the slot. Every plan limit, quota and rate limit is applied
-  //    here, so a ticket coming back means the bytes are welcome.
-  let ticket;
+  const bar = json ? null : progressBar("Uploading", build.size);
+  let spin: ReturnType<typeof spinner> | null = null;
+  let status;
   try {
-    ticket = await client.createUpload({
-      fileName,
-      fileSize: stats.size,
+    status = await uploadBuild({
+      client: new AppDropperClient(base, token),
+      file: build,
       releaseNotes: notes,
       tag,
       // Read off the runner's environment. On a laptop this is undefined and
       // the field is simply omitted.
       ci: detectCi(),
+      timeoutMs,
+      onProgress: (sent) => bar?.update(sent),
+      onPhase: (phase) => {
+        if (phase !== "processing") return;
+        bar?.done();
+        if (!json) spin = spinner("Processing build");
+      },
     });
   } catch (err) {
-    throw asCliError(err);
-  }
-
-  // 2. Send the binary straight to storage — it never passes through the API.
-  const bar = json ? null : progressBar("Uploading", stats.size);
-  try {
-    await uploadFile(
-      ticket.upload_url,
-      filePath,
-      ticket.content_type,
-      stats.size,
-      (sent) => bar?.update(sent)
-    );
     bar?.done();
-  } catch (err) {
-    bar?.done();
-    throw new CliError(
-      `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
-      EXIT.FAILURE
-    );
-  }
-
-  // 3. Wait for the server to parse it and mint the install link.
-  const spin = json ? null : spinner("Processing build");
-  let status;
-  try {
-    status = await client.awaitUpload(ticket.upload_id, timeoutMs);
-  } catch (err) {
-    spin?.stop();
     throw asCliError(err);
-  }
-  spin?.stop();
-
-  if (status.status === "error") {
-    throw new CliError(
-      status.error?.message ?? "This build could not be processed.",
-      EXIT.FAILURE
-    );
-  }
-  if (status.status !== "ready") {
-    throw new CliError(
-      "The build is still processing. Check your dashboard in a moment — nothing was lost.",
-      EXIT.FAILURE
-    );
+  } finally {
+    (spin as ReturnType<typeof spinner> | null)?.stop();
   }
 
   if (json) {
@@ -131,7 +91,7 @@ export async function uploadCommand(args: ParsedArgs): Promise<void> {
   const installUrl = status.install_url ?? "";
   info();
   success(
-    `${color.bold(status.app_name ?? fileName)} ${status.version ?? ""}${
+    `${color.bold(status.app_name ?? build.fileName)} ${status.version ?? ""}${
       status.build_number ? ` (${status.build_number})` : ""
     } is live`
   );
@@ -186,5 +146,10 @@ export function asCliError(err: unknown): CliError {
     return new CliError(err.message, code);
   }
   if (err instanceof CliError) return err;
+  if (err instanceof BuildFileError) return new CliError(err.message, EXIT.USAGE);
+  if (err instanceof TransferError) return new CliError(`Upload failed: ${err.message}`, EXIT.FAILURE);
+  if (err instanceof BuildProcessingError || err instanceof StillProcessingError) {
+    return new CliError(err.message, EXIT.FAILURE);
+  }
   return new CliError(err instanceof Error ? err.message : String(err), EXIT.FAILURE);
 }

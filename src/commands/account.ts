@@ -44,11 +44,17 @@ export async function whoamiCommand(args: ParsedArgs): Promise<void> {
   info(`  ${color.dim("Scopes")}  ${identity.scopes.join(", ")}`);
   info(`  ${color.dim("Source")}  ${source}`);
   const apps = identity.apps ?? [];
-  info(`  ${color.dim("Apps")}    ${apps.length} app${apps.length === 1 ? "" : "s"}`);
+  info(
+    `  ${color.dim("Apps")}    ${
+      identity.all_apps
+        ? `All apps, including new ones (${apps.length} today)`
+        : `${apps.length} app${apps.length === 1 ? "" : "s"}`
+    }`
+  );
   for (const app of apps) {
     info(`    ${color.bold(app.app_name)} ${color.dim(app.bundle_id)}`);
   }
-  if (apps.length === 0) {
+  if (apps.length === 0 && !identity.all_apps) {
     warn("This token doesn't cover any app you still manage. Check Settings → API tokens.");
   }
   if (identity.expires_at) {

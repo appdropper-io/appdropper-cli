@@ -15,6 +15,8 @@ export interface StoredCredential {
   /** Every app the token covers — one login can now grant several. */
   app_ids: string[];
   app_names: string[];
+  /** The login covers every app, including ones created after it. */
+  all_apps?: boolean;
   hint: string;
   expires_at: number;
 }
@@ -89,7 +91,20 @@ export function clearCredential(base: string): boolean {
  * APPDROPPER_TOKEN and never has a saved login at all.
  */
 export function resolveToken(base: string, explicit?: string): string | null {
-  if (explicit) return explicit;
-  if (process.env.APPDROPPER_TOKEN) return process.env.APPDROPPER_TOKEN;
-  return loadCredential(base)?.token ?? null;
+  return resolveTokenWithSource(base, explicit)?.token ?? null;
+}
+
+/** Where a resolved token came from — what `whoami` reports, never the value. */
+export type TokenSource = "argument" | "APPDROPPER_TOKEN" | "saved login";
+
+/** {@link resolveToken}, plus which of the three places supplied it. */
+export function resolveTokenWithSource(
+  base: string,
+  explicit?: string
+): { token: string; source: TokenSource } | null {
+  if (explicit) return { token: explicit, source: "argument" };
+  const fromEnv = process.env.APPDROPPER_TOKEN?.trim();
+  if (fromEnv) return { token: fromEnv, source: "APPDROPPER_TOKEN" };
+  const saved = loadCredential(base)?.token;
+  return saved ? { token: saved, source: "saved login" } : null;
 }

@@ -29,6 +29,32 @@ interface RequestOptions {
   headers?: Record<string, string>;
   /** Milliseconds of inactivity before giving up. */
   timeoutMs?: number;
+  /** Aborts the request — how the MCP server honours a cancelled tool call. */
+  signal?: AbortSignal;
+  userAgent?: string;
+}
+
+/** What an aborted request or upload rejects with. */
+export class AbortError extends Error {
+  constructor() {
+    super("The operation was cancelled.");
+    this.name = "AbortError";
+  }
+}
+
+/**
+ * Destroys `req` when `signal` aborts, and returns the function that stops
+ * listening. An already-aborted signal destroys it on the spot.
+ */
+function bindAbort(req: http.ClientRequest, signal: AbortSignal | undefined): () => void {
+  if (!signal) return () => {};
+  const abort = () => req.destroy(new AbortError());
+  if (signal.aborted) {
+    abort();
+    return () => {};
+  }
+  signal.addEventListener("abort", abort, { once: true });
+  return () => signal.removeEventListener("abort", abort);
 }
 
 interface RawResponse {
@@ -51,7 +77,7 @@ function request(options: RequestOptions): Promise<RawResponse> {
         path: `${url.pathname}${url.search}`,
         headers: {
           accept: "application/json",
-          "user-agent": userAgent(),
+          "user-agent": options.userAgent ?? userAgent(),
           ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
           ...(payload
             ? {
@@ -65,20 +91,29 @@ function request(options: RequestOptions): Promise<RawResponse> {
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () =>
+        res.on("end", () => {
+          unbind();
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
             body: Buffer.concat(chunks).toString("utf8"),
-          })
-        );
+          });
+        });
+        res.on("error", (err) => {
+          unbind();
+          reject(err);
+        });
       }
     );
 
+    const unbind = bindAbort(req, options.signal);
     req.setTimeout(options.timeoutMs ?? 60_000, () => {
       req.destroy(new Error("The request timed out."));
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      unbind();
+      reject(err);
+    });
     if (payload) req.write(payload);
     req.end();
   });
@@ -154,7 +189,12 @@ export interface TokenIdentity {
   hint: string;
   scopes: string[];
   expires_at: number | null;
-  /** Every app this token may upload to. */
+  /**
+   * True when the token covers every app the account manages, including apps
+   * its uploads create. Absent from servers that predate the option.
+   */
+  all_apps?: boolean;
+  /** Every app this token may upload to right now. */
   apps: TokenApp[];
 }
 
@@ -173,14 +213,41 @@ export interface BuildSummary {
   install_url: string;
 }
 
+/** One build, as `GET /builds/{id}` returns it. */
+export interface BuildDetail extends BuildSummary {
+  app_id: string;
+  app_name: string;
+  bundle_id: string;
+  release_notes: string;
+  min_os_version: string;
+  qr_url: string;
+}
+
+export interface ClientOptions {
+  /** Identifies the calling tool, e.g. `appdropper-mcp/0.1.0`. */
+  userAgent?: string;
+  /** Cancels every request this client makes. */
+  signal?: AbortSignal;
+}
+
 export class AppDropperClient {
   constructor(
     private readonly base: string,
-    private readonly token?: string
+    private readonly token?: string,
+    private readonly options: ClientOptions = {}
   ) {}
 
   private url(path: string): string {
     return `${this.base}${path}`;
+  }
+
+  private send(options: Omit<RequestOptions, "signal" | "userAgent" | "token">) {
+    return request({
+      ...options,
+      token: this.token,
+      signal: this.options.signal,
+      userAgent: this.options.userAgent,
+    });
   }
 
   async createUpload(input: {
@@ -192,10 +259,9 @@ export class AppDropperClient {
     ci?: CiInfo;
   }): Promise<UploadTicket> {
     return parse(
-      await request({
+      await this.send({
         method: "POST",
         url: this.url("/uploads"),
-        token: this.token,
         body: {
           file_name: input.fileName,
           file_size: input.fileSize,
@@ -219,11 +285,10 @@ export class AppDropperClient {
       const remaining = Math.max(0, deadline - Date.now());
       const wait = Math.min(120, Math.floor(remaining / 1000));
       const status = parse(
-        await request({
+        await this.send({
           method: "GET",
           url: this.url(`/uploads/${encodeURIComponent(uploadId)}?wait=${wait}`),
-          token: this.token,
-          // Generously past the server's own hold, so the client isn't the one
+            // Generously past the server's own hold, so the client isn't the one
           // that gives up on a request the server is still honouring.
           timeoutMs: (wait + 30) * 1000,
         })
@@ -235,29 +300,60 @@ export class AppDropperClient {
 
   async whoami(): Promise<TokenIdentity> {
     return parse(
-      await request({ method: "GET", url: this.url("/me"), token: this.token })
+      await this.send({ method: "GET", url: this.url("/me") })
     ) as TokenIdentity;
+  }
+
+  /** The apps the token reaches. Same payload as `whoami`, by design. */
+  async listApps(): Promise<TokenIdentity> {
+    return parse(await this.send({ method: "GET", url: this.url("/apps") })) as TokenIdentity;
+  }
+
+  /**
+   * One build by ID. The server searches every app the token covers, so the
+   * app ID is optional and only narrows the search.
+   */
+  async getBuild(buildId: string, appId?: string): Promise<BuildDetail> {
+    const query = appId ? `?app_id=${encodeURIComponent(appId)}` : "";
+    return parse(
+      await this.send({
+        method: "GET",
+        url: this.url(`/builds/${encodeURIComponent(buildId)}${query}`),
+      })
+    ) as BuildDetail;
   }
 
   async listBuilds(appId: string, limit: number) {
     return parse(
-      await request({
+      await this.send({
         method: "GET",
         url: this.url(`/apps/${encodeURIComponent(appId)}/builds?limit=${limit}`),
-        token: this.token,
       })
-    ) as { app_name: string; bundle_id: string; builds: BuildSummary[] };
+    ) as {
+      app_id: string;
+      app_name: string;
+      bundle_id: string;
+      platform: string;
+      install_url: string;
+      builds: BuildSummary[];
+    };
   }
 
   async rotate() {
     return parse(
-      await request({ method: "POST", url: this.url("/tokens/rotate"), token: this.token })
-    ) as { token: string; token_id: string; hint: string; expires_at: number };
+      await this.send({ method: "POST", url: this.url("/tokens/rotate") })
+    ) as {
+      token: string;
+      token_id: string;
+      hint: string;
+      expires_at: number;
+      all_apps?: boolean;
+    };
   }
 
   async startDeviceAuth(clientName: string) {
     return parse(
-      await request({
+      await this.send({
         method: "POST",
         url: this.url("/device/code"),
         body: { client_name: clientName },
@@ -283,11 +379,12 @@ export class AppDropperClient {
     hint: string;
     app_ids: string[];
     app_names: string[];
+    all_apps?: boolean;
     expires_at: number;
   } | null> {
     try {
       return parse(
-        await request({
+        await this.send({
           method: "POST",
           url: this.url("/device/token"),
           body: { device_code: deviceCode },
@@ -298,6 +395,7 @@ export class AppDropperClient {
         hint: string;
         app_ids: string[];
         app_names: string[];
+        all_apps?: boolean;
         expires_at: number;
       };
     } catch (err) {
@@ -331,17 +429,22 @@ export async function uploadFile(
   filePath: string,
   contentType: string,
   totalSize: number,
-  onProgress: (transferred: number) => void
+  onProgress: (transferred: number) => void,
+  options: { signal?: AbortSignal; userAgent?: string } = {}
 ): Promise<void> {
+  const { signal } = options;
   let offset = 0;
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new AbortError();
     try {
-      await sendChunk(sessionUrl, filePath, contentType, totalSize, offset, onProgress);
+      await sendChunk(sessionUrl, filePath, contentType, totalSize, offset, onProgress, options);
       return;
     } catch (err) {
       lastError = err as Error;
+      // A cancellation is a decision, not a network fault: never resume it.
+      if (err instanceof AbortError || signal?.aborted) throw new AbortError();
       if (attempt === UPLOAD_ATTEMPTS) break;
       // Ask the session what it kept. A session that has gone away answers 404
       // or 410, and there is nothing to resume from — fail rather than loop.
@@ -349,7 +452,7 @@ export async function uploadFile(
       if (received === null) break;
       offset = received;
       onProgress(offset);
-      await delay(Math.min(8000, 500 * 2 ** attempt));
+      await delay(Math.min(8000, 500 * 2 ** attempt), signal);
     }
   }
 
@@ -362,7 +465,8 @@ function sendChunk(
   contentType: string,
   totalSize: number,
   offset: number,
-  onProgress: (transferred: number) => void
+  onProgress: (transferred: number) => void,
+  options: { signal?: AbortSignal; userAgent?: string } = {}
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const url = new URL(sessionUrl);
@@ -378,7 +482,7 @@ function sendChunk(
         headers: {
           "content-type": contentType,
           "content-length": remaining,
-          "user-agent": userAgent(),
+          "user-agent": options.userAgent ?? userAgent(),
           // Only sent when resuming: on a first, whole-file PUT, Content-Range
           // is unnecessary and some proxies handle its absence better.
           ...(offset > 0
@@ -390,6 +494,7 @@ function sendChunk(
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () => {
+          unbind();
           const status = res.statusCode ?? 0;
           if (status >= 200 && status < 300) {
             resolve();
@@ -409,10 +514,17 @@ function sendChunk(
     // No overall timeout: a large upload legitimately takes minutes. The idle
     // timeout below is what catches a genuinely dead connection.
     req.setTimeout(120_000, () => req.destroy(new Error("The upload stalled.")));
-    req.on("error", reject);
+    const unbind = bindAbort(req, options.signal);
 
+    // Streamed from disk in 64 KB chunks, never read whole: a 2 GB build costs
+    // the same memory as a 2 MB one.
     let sent = offset;
     const stream = fs.createReadStream(filePath, { start: offset });
+    req.on("error", (err) => {
+      unbind();
+      stream.destroy();
+      reject(err);
+    });
     stream.on("data", (chunk) => {
       sent += chunk.length;
       onProgress(sent);
@@ -449,6 +561,17 @@ async function queryOffset(sessionUrl: string, totalSize: number): Promise<numbe
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new AbortError());
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new AbortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

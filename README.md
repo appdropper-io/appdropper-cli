@@ -45,6 +45,10 @@ On your own machine you can log in through the browser instead — no password i
 appdropper login
 ```
 
+A login covers all your apps by default, including new ones: the first upload of a new bundle ID creates its app. You can limit it to selected apps on the approval page.
+
+The same login is used by [`@appdropper/mcp`](https://appdropper.io/help/mcp), so an AI editor (Claude Code, Cursor, VS Code Copilot) can upload builds too.
+
 ## Commands
 
 | Command | What it does |
@@ -121,9 +125,27 @@ Three requests, hidden behind one command:
 2. **Transfer** — the binary goes straight from your machine to Google Cloud Storage, never through the API. That's why build size is capped only by your plan. A dropped connection resumes from where it stopped rather than starting over.
 3. **Wait** — a long poll while the server unpacks the binary, reads its name, icon, version and bundle ID, files it as a build, and notifies your testers.
 
+## Using it as a library
+
+`appdropper/api` exports the client, the resumable uploader and the login storage that the CLI itself uses, for tools built on top of it:
+
+```js
+import { AppDropperClient, apiUrl, inspectBuildFile, resolveToken, uploadBuild } from "appdropper/api";
+
+const base = apiUrl();
+const result = await uploadBuild({
+  client: new AppDropperClient(base, resolveToken(base)),
+  file: inspectBuildFile("app-release.apk"),
+});
+console.error(result.install_url);
+```
+
+Nothing in it prints. Errors are typed (`ApiError`, `BuildFileError`, `BuildProcessingError`, `TransferError`, `StillProcessingError`, `AbortError`).
+
 ## Docs
 
 - [CI/CD setup guide](https://appdropper.io/help/ci-cd-uploads)
+- [MCP server for AI editors](https://appdropper.io/help/mcp)
 - [CLI reference](https://appdropper.io/help/cli)
 - [REST API reference](https://appdropper.io/help/api)
 
