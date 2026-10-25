@@ -54,11 +54,25 @@ The same login is used by [`@appdropper/mcp`](https://appdropper.io/help/mcp), s
 | Command | What it does |
 |---|---|
 | `appdropper upload <file>` | Upload a build, wait for processing, print the install link |
+| `appdropper flutter build apk\|ipa` | Run the Flutter build, then upload what it made |
 | `appdropper builds list` | Recent builds for this token's app |
 | `appdropper login` | Authorize this machine in a browser |
 | `appdropper logout` | Forget the saved login |
 | `appdropper whoami` | Show which app and token are in use |
 | `appdropper token rotate` | Replace the current token with a fresh one |
+
+### Flutter
+
+Put `appdropper` in front of the build command you already use:
+
+```bash
+appdropper flutter build apk --release --flavor prod --notes "Fixed checkout"
+```
+
+Every argument goes to Flutter unchanged, except the upload flags below (long forms only), which Flutter's build commands don't use. When the build succeeds, the file Flutter reports in its `✓ Built …` line is uploaded. With `--split-per-abi`, the arm64 APK is uploaded. If the build fails, nothing is uploaded.
+
+- `flutter build ipa` exports for the App Store by default, and testers can't install that. Add `--export-method ad-hoc` (or `development`).
+- `appbundle` isn't supported, because App Dropper installs `.apk` and `.ipa` files, not `.aab`. Run `flutter build appbundle` directly for Google Play.
 
 ### Upload flags
 

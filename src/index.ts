@@ -2,6 +2,7 @@
 import { boolFlag, parseArgs } from "./args";
 import { CliError, EXIT } from "./errors";
 import { uploadCommand } from "./commands/upload";
+import { flutterCommand } from "./commands/flutter";
 import { loginCommand, logoutCommand } from "./commands/login";
 import { buildsCommand } from "./commands/builds";
 import { rotateCommand, whoamiCommand } from "./commands/account";
@@ -24,6 +25,7 @@ ${color.bold("USAGE")}
 
 ${color.bold("COMMANDS")}
   upload <file>        Upload a build and print its install link
+  flutter build apk|ipa  Run the Flutter build, then upload what it made
   builds list          Recent builds (--app <id> if the token covers several)
   login                Authorize this machine in a browser
   logout               Forget the saved login on this machine
@@ -40,6 +42,7 @@ ${color.bold("UPLOAD OPTIONS")}
 
 ${color.bold("EXAMPLES")}
   appdropper upload build/app/outputs/flutter-apk/app-release.apk
+  appdropper flutter build apk --release --notes "Fixed checkout"
   appdropper upload MyApp.ipa --notes "$(git log -1 --pretty=%B)"
   appdropper upload app.apk --token $APPDROPPER_TOKEN --json
 
@@ -56,6 +59,12 @@ Docs: https://appdropper.io/help/ci-cd-uploads
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
+  // Flutter's arguments are passed through verbatim, so they never meet the
+  // general parser (which would read `--release apk` as a flag with a value).
+  if (argv[0] === "flutter") {
+    await flutterCommand(argv.slice(1));
+    return EXIT.OK;
+  }
   const args = parseArgs(argv);
   const command = args.positionals.shift();
 

@@ -46,7 +46,7 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "dev": "tsc --watch",
-    "test": "npm run build && node test/args-test.js && node test/ci-test.js && node test/config-test.js && node test/client-test.js && node test/upload-command-test.js && node test/commands-test.js && node test/library-test.js"
+    "test": "npm run build && node test/args-test.js && node test/ci-test.js && node test/config-test.js && node test/client-test.js && node test/upload-command-test.js && node test/commands-test.js && node test/flutter-test.js && node test/library-test.js"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0"
