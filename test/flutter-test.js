@@ -21,6 +21,11 @@ const {
 } = require(path.join(DIST, "commands/flutter.js"));
 const { EXIT, CliError } = require(path.join(DIST, "errors.js"));
 
+// A missing token at a terminal starts a browser sign-in. These tests are
+// about the other path, so they must not look like a terminal even when run
+// from one.
+process.stdin.isTTY = false;
+
 let workDir;
 let originalPath;
 let originalCwd;

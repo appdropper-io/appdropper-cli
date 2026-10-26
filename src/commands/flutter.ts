@@ -2,9 +2,9 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { flag, type ParsedArgs } from "../args";
-import { apiUrl, resolveToken } from "../config";
 import { CliError, EXIT } from "../errors";
 import { color, info, warn } from "../ui";
+import { requireToken } from "./login";
 import { uploadCommand } from "./upload";
 
 /**
@@ -28,13 +28,8 @@ export async function flutterCommand(argv: string[]): Promise<void> {
   if (target === undefined) throw new CliError(USAGE, EXIT.USAGE);
   checkTarget(target);
 
-  // Fail before a several-minute build, not after it.
-  if (!resolveToken(apiUrl(), flag(uploadArgs, ["token"]))) {
-    throw new CliError(
-      "No API token. Set APPDROPPER_TOKEN, pass --token, or run `appdropper login`.",
-      EXIT.AUTH
-    );
-  }
+  // Sign in (or fail) before a several-minute build, not after it.
+  await requireToken(flag(uploadArgs, ["token"]), uploadArgs);
 
   if (
     target === "ipa" &&

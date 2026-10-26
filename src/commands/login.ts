@@ -1,7 +1,15 @@
 import { spawn } from "child_process";
 import { boolFlag, type ParsedArgs } from "../args";
 import { AppDropperClient } from "../client";
-import { apiUrl, clearCredential, configPath, loadCredential, saveCredential } from "../config";
+import { isCi } from "../ci";
+import {
+  apiUrl,
+  clearCredential,
+  configPath,
+  loadCredential,
+  resolveToken,
+  saveCredential,
+} from "../config";
 import { CliError, EXIT } from "../errors";
 import { asCliError } from "./upload";
 import { color, info, success } from "../ui";
@@ -13,7 +21,10 @@ import { color, info, success } from "../ui";
  * and nothing here works without a browser — which is exactly why CI uses a
  * pre-generated token in APPDROPPER_TOKEN instead.
  */
-export async function loginCommand(args: ParsedArgs): Promise<void> {
+export async function loginCommand(
+  args: ParsedArgs,
+  { continuing = false }: { continuing?: boolean } = {}
+): Promise<void> {
   const base = apiUrl();
   const client = new AppDropperClient(base);
 
@@ -92,9 +103,38 @@ export async function loginCommand(args: ParsedArgs): Promise<void> {
       )}`
     );
     info();
-    info(color.dim("Next: appdropper upload path/to/build.apk"));
+    if (!continuing) info(color.dim("Next: appdropper upload path/to/build.apk"));
     return;
   }
+}
+
+/**
+ * The token for a command that needs one. A person at a terminal with no login
+ * yet is signed in on the spot, so their first `upload` or `flutter build`
+ * still finishes in one go. CI, or anything else nobody is watching, fails
+ * fast instead: there is no one to approve a browser prompt.
+ */
+export async function requireToken(explicit: string | undefined, args: ParsedArgs): Promise<string> {
+  const base = apiUrl();
+  const existing = resolveToken(base, explicit);
+  if (existing) return existing;
+
+  if (!canSignInHere()) {
+    throw new CliError(
+      "No API token. Set APPDROPPER_TOKEN, pass --token, or run `appdropper login`.",
+      EXIT.AUTH
+    );
+  }
+
+  info(color.dim("Not logged in on this machine yet. Sign in once and the command carries on."));
+  await loginCommand(args, { continuing: true });
+  const token = resolveToken(base);
+  if (!token) throw new CliError("Sign-in didn't complete. Run `appdropper login`.", EXIT.AUTH);
+  return token;
+}
+
+function canSignInHere(): boolean {
+  return process.stdin.isTTY === true && process.stderr.isTTY === true && !isCi();
 }
 
 export async function logoutCommand(): Promise<void> {

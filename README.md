@@ -47,6 +47,8 @@ appdropper login
 
 A login covers all your apps by default, including new ones: the first upload of a new bundle ID creates its app. You can limit it to selected apps on the approval page.
 
+Skipped this step? Run `upload` or `flutter build` at a terminal with no login and the CLI opens this sign-in first, then carries on. In CI, where nobody can approve it, a missing token fails straight away with exit code 3.
+
 The same login is used by [`@appdropper/mcp`](https://appdropper.io/help/mcp), so an AI editor (Claude Code, Cursor, VS Code Copilot) can upload builds too.
 
 ## Commands

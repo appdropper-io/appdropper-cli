@@ -202,6 +202,15 @@ const DETECTORS: Detector[] = [
 ];
 
 /**
+ * Whether this is any CI runner at all. Unlike {@link detectCi} it ignores
+ * APPDROPPER_NO_CI_INFO, which hides pipeline details but doesn't put a person
+ * at the keyboard.
+ */
+export function isCi(): boolean {
+  return DETECTORS.some((d) => env(d.when));
+}
+
+/**
  * Describes the pipeline this process is running in, or `undefined` on a
  * developer's laptop. `APPDROPPER_NO_CI_INFO=1` opts out entirely, for anyone
  * who would rather not put a branch name in a tester's inbox.

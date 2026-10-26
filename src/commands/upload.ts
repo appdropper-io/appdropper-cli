@@ -2,7 +2,7 @@ import * as fs from "fs";
 import { boolFlag, flag, type ParsedArgs } from "../args";
 import { detectCi } from "../ci";
 import { AppDropperClient, ApiError } from "../client";
-import { apiUrl, resolveToken } from "../config";
+import { apiUrl } from "../config";
 import { CliError, EXIT } from "../errors";
 import {
   BuildFileError,
@@ -15,6 +15,7 @@ import {
   type BuildFile,
 } from "../upload-build";
 import { color, info, out, printQr, progressBar, spinner, success } from "../ui";
+import { requireToken } from "./login";
 
 export async function uploadCommand(args: ParsedArgs): Promise<void> {
   const base = apiUrl();
@@ -26,20 +27,15 @@ export async function uploadCommand(args: ParsedArgs): Promise<void> {
     );
   }
 
-  const token = resolveToken(base, flag(args, ["token", "t"]));
-  if (!token) {
-    throw new CliError(
-      "No API token. Set APPDROPPER_TOKEN, pass --token, or run `appdropper login`.",
-      EXIT.AUTH
-    );
-  }
-
+  // The file is checked first: no point signing in to upload a typo.
   let build: BuildFile;
   try {
     build = inspectBuildFile(file);
   } catch (err) {
     throw asCliError(err);
   }
+
+  const token = await requireToken(flag(args, ["token", "t"]), args);
 
   const json = boolFlag(args, ["json"]);
   const noQr = boolFlag(args, ["no-qr", "noQr"]);

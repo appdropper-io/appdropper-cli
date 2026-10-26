@@ -13,7 +13,7 @@ const DIST = path.resolve(__dirname, "..", "dist");
 const { parseArgs } = require(path.join(DIST, "args.js"));
 const { whoamiCommand, rotateCommand } = require(path.join(DIST, "commands/account.js"));
 const { buildsCommand } = require(path.join(DIST, "commands/builds.js"));
-const { loginCommand, logoutCommand } = require(path.join(DIST, "commands/login.js"));
+const { loginCommand, logoutCommand, requireToken } = require(path.join(DIST, "commands/login.js"));
 const { loadCredential, saveCredential } = require(path.join(DIST, "config.js"));
 const { EXIT, CliError } = require(path.join(DIST, "errors.js"));
 
@@ -337,6 +337,104 @@ test("loginCommand polls until granted, then saves the credential", async () => 
     assert.strictEqual(saved.token, "adp_granted");
     assert.deepStrictEqual(saved.app_names, ["Checkout"]);
     assert.ok(pollCount >= 2);
+  } finally {
+    await server.close();
+    teardown();
+  }
+});
+
+/** Runs `fn` as if at a terminal (or not), outside any CI runner. */
+async function asTerminal(isTTY, fn, ciEnv = {}) {
+  const saved = { stdin: process.stdin.isTTY, stderr: process.stderr.isTTY, CI: process.env.CI, GH: process.env.GITHUB_ACTIONS };
+  process.stdin.isTTY = isTTY;
+  process.stderr.isTTY = isTTY;
+  delete process.env.CI;
+  delete process.env.GITHUB_ACTIONS;
+  Object.assign(process.env, ciEnv);
+  try {
+    return await fn();
+  } finally {
+    process.stdin.isTTY = saved.stdin;
+    process.stderr.isTTY = saved.stderr;
+    for (const [k, v] of [["CI", saved.CI], ["GITHUB_ACTIONS", saved.GH]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test("requireToken returns an existing token without signing in", async () => {
+  setup();
+  process.env.APPDROPPER_TOKEN = "adp_env";
+  try {
+    assert.strictEqual(await asTerminal(true, () => requireToken(undefined, parseArgs([]))), "adp_env");
+  } finally {
+    teardown();
+  }
+});
+
+test("requireToken fails fast when nobody is at a terminal", async () => {
+  setup();
+  process.env.APPDROPPER_API_URL = "http://127.0.0.1:9"; // would refuse if contacted
+  try {
+    await assert.rejects(
+      () => asTerminal(false, () => requireToken(undefined, parseArgs([]))),
+      (err) => err instanceof CliError && err.exitCode === EXIT.AUTH && /No API token/.test(err.message)
+    );
+  } finally {
+    teardown();
+  }
+});
+
+test("requireToken fails fast in CI, even with a TTY attached", async () => {
+  setup();
+  process.env.APPDROPPER_API_URL = "http://127.0.0.1:9";
+  try {
+    await assert.rejects(
+      () => asTerminal(true, () => requireToken(undefined, parseArgs([])), { CI: "true" }),
+      (err) => err instanceof CliError && err.exitCode === EXIT.AUTH && /No API token/.test(err.message)
+    );
+  } finally {
+    teardown();
+  }
+});
+
+test("requireToken signs a person in on the spot, then hands back the token", async () => {
+  setup();
+  const server = await startServer(async (req, res) => {
+    if (req.url === "/device/code") {
+      return sendJson(res, 200, {
+        device_code: "dc1",
+        user_code: "ABCD-2345",
+        verification_uri: "https://appdropper.io/device",
+        verification_uri_complete: "https://appdropper.io/device?code=ABCD-2345",
+        expires_in: 60,
+        interval: 0,
+      });
+    }
+    if (req.url === "/device/token") {
+      await readBody(req);
+      return sendJson(res, 200, {
+        access_token: "adp_fresh",
+        hint: "adp_x_••••",
+        app_ids: [],
+        app_names: [],
+        all_apps: true,
+        expires_at: Date.now() + 90 * 86400_000,
+      });
+    }
+    sendJson(res, 404, { error: {} });
+  });
+  process.env.APPDROPPER_API_URL = server.baseUrl;
+  try {
+    let token;
+    const { stderr } = await capture(async () => {
+      token = await asTerminal(true, () => requireToken(undefined, parseArgs(["--no-browser"])));
+    });
+    assert.strictEqual(token, "adp_fresh");
+    assert.strictEqual(loadCredential(server.baseUrl).token, "adp_fresh");
+    assert.match(stderr, /Not logged in/);
+    assert.doesNotMatch(stderr, /Next: appdropper upload/, "the command carries on, so no 'next step' hint");
   } finally {
     await server.close();
     teardown();
