@@ -1,6 +1,6 @@
 {
   "name": "appdropper",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Upload .apk and .ipa builds to App Dropper from your terminal or CI pipeline. Also usable as a library via appdropper/api.",
   "keywords": [
     "appdropper",
