@@ -335,6 +335,96 @@ test("a --token flag beats a token saved on disk", async () => {
   }
 });
 
+test("a full storage quota (402) prints the upgrade line and is not a rate limit", async () => {
+  setup();
+  const server = await startServer((req, res) => {
+    sendJson(res, 402, {
+      error: {
+        code: "upgrade_required",
+        message:
+          "You've used 1 GB of your 1 GB storage. Delete an old build to free up space, or upgrade for more. Upgrade to Pro at https://appdropper.io/pricing",
+        upgrade: {
+          limit: "maxStorageBytes",
+          current_plan: "free",
+          upgrade_to: "pro",
+          upgrade_url: "https://appdropper.io/pricing",
+        },
+      },
+    });
+  });
+  process.env.APPDROPPER_API_URL = server.baseUrl;
+  process.env.APPDROPPER_TOKEN = "adp_x";
+  const file = makeFile("app.apk");
+  try {
+    await assert.rejects(
+      () => captureStdout(() => uploadCommand(parseArgs([file]))),
+      (err) =>
+        err instanceof CliError &&
+        err.exitCode === EXIT.FAILURE &&
+        /\n  Upgrade to Pro: https:\/\/appdropper\.io\/pricing$/.test(err.message) &&
+        // The sentence isn't printed twice.
+        (err.message.match(/Upgrade to Pro/g) || []).length === 1
+    );
+  } finally {
+    await server.close();
+    teardown();
+  }
+});
+
+test("a Studio limit prints the support address instead of an upgrade", async () => {
+  setup();
+  const server = await startServer((req, res) => {
+    sendJson(res, 402, {
+      error: {
+        code: "upgrade_required",
+        message: "This build is 3 GB. Your plan allows up to 2 GB per build. Contact support@appdropper.io to raise this limit.",
+        upgrade: {
+          limit: "maxUploadBytes",
+          current_plan: "studio",
+          upgrade_to: null,
+          upgrade_url: "mailto:support@appdropper.io",
+        },
+      },
+    });
+  });
+  process.env.APPDROPPER_API_URL = server.baseUrl;
+  process.env.APPDROPPER_TOKEN = "adp_x";
+  const file = makeFile("app.apk");
+  try {
+    await assert.rejects(
+      () => captureStdout(() => uploadCommand(parseArgs([file]))),
+      (err) =>
+        err instanceof CliError &&
+        /\n  Contact support@appdropper\.io to raise this limit\.$/.test(err.message) &&
+        !/Upgrade to/.test(err.message)
+    );
+  } finally {
+    await server.close();
+    teardown();
+  }
+});
+
+test("an older server without the upgrade block still shows its own sentence", async () => {
+  setup();
+  const server = await startServer((req, res) => {
+    sendJson(res, 402, {
+      error: { code: "upgrade_required", message: "Too big. Upgrade to Pro at https://appdropper.io/pricing" },
+    });
+  });
+  process.env.APPDROPPER_API_URL = server.baseUrl;
+  process.env.APPDROPPER_TOKEN = "adp_x";
+  const file = makeFile("app.apk");
+  try {
+    await assert.rejects(
+      () => captureStdout(() => uploadCommand(parseArgs([file]))),
+      (err) => err instanceof CliError && err.message === "Too big. Upgrade to Pro at https://appdropper.io/pricing"
+    );
+  } finally {
+    await server.close();
+    teardown();
+  }
+});
+
 (async () => {
   let failed = 0;
   console.log("\nuploadCommand end to end\n");

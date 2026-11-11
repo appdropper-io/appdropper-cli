@@ -11,14 +11,45 @@ import type { CiInfo } from "./ci";
  * user waits for on every single build.
  */
 
+/**
+ * The `upgrade` block the API adds to plan-limit errors (402, and the hourly
+ * upload cap's 429). `upgrade_to` is null on Studio, where `upgrade_url` is
+ * the support address instead of the pricing page.
+ */
+export interface UpgradeInfo {
+  limit: string;
+  current_plan: string;
+  upgrade_to: string | null;
+  upgrade_url: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    message: string
+    message: string,
+    /** Present when a plan limit caused the error. */
+    readonly upgrade?: UpgradeInfo
   ) {
     super(message);
   }
+}
+
+/**
+ * A plan-limit message with the upgrade path on its own line, so it stands
+ * out in a CI log: "Upgrade to Pro: https://appdropper.io/pricing". Without
+ * an upgrade block (an older server) the message already says it, unchanged.
+ */
+export function planLimitMessage(message: string, upgrade?: UpgradeInfo): string {
+  if (!upgrade?.upgrade_url) return message;
+  const reason = message
+    .replace(/\s*(Upgrade to (Pro|Studio)\b|Contact support@)[\s\S]*$/, "")
+    .trim();
+  if (!upgrade.upgrade_to) {
+    return `${reason}\n  Contact ${upgrade.upgrade_url.replace(/^mailto:/, "")} to raise this limit.`;
+  }
+  const plan = upgrade.upgrade_to.charAt(0).toUpperCase() + upgrade.upgrade_to.slice(1);
+  return `${reason}\n  Upgrade to ${plan}: ${upgrade.upgrade_url}`;
 }
 
 interface RequestOptions {
@@ -142,11 +173,14 @@ function parse(res: RawResponse): unknown {
     // the only trustworthy part of it.
   }
   if (res.status >= 400) {
-    const envelope = (parsed as { error?: { code?: string; message?: string } })?.error;
+    const envelope = (
+      parsed as { error?: { code?: string; message?: string; upgrade?: UpgradeInfo } }
+    )?.error;
     throw new ApiError(
       res.status,
       envelope?.code ?? "http_error",
-      envelope?.message ?? `Request failed with HTTP ${res.status}.`
+      envelope?.message ?? `Request failed with HTTP ${res.status}.`,
+      envelope?.upgrade
     );
   }
   return parsed;
@@ -163,7 +197,7 @@ export interface UploadTicket {
 export interface UploadStatus {
   upload_id: string;
   status: "pending" | "processing" | "ready" | "error";
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; upgrade?: UpgradeInfo };
   build_id?: string;
   app_id?: string;
   app_name?: string;
