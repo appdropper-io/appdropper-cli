@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { CiInfo } from "./ci";
-import { AppDropperClient, uploadFile, type UploadStatus } from "./client";
+import { AppDropperClient, uploadFile, type UpgradeInfo, type UploadStatus } from "./client";
 
 /**
  * The one implementation of "send this build to App Dropper": check the file,
@@ -86,7 +86,9 @@ export class BuildProcessingError extends Error {
     /** `invalid_build`, `upgrade_required`, or whatever the server reports. */
     readonly code: string,
     message: string,
-    readonly uploadId: string
+    readonly uploadId: string,
+    /** Present when a plan limit (e.g. the app cap) rejected the build. */
+    readonly upgrade?: UpgradeInfo
   ) {
     super(message);
     this.name = "BuildProcessingError";
@@ -189,7 +191,8 @@ export async function uploadBuild(options: UploadBuildOptions): Promise<ReadyUpl
     throw new BuildProcessingError(
       status.error?.code ?? "invalid_build",
       status.error?.message ?? "This build could not be processed.",
-      ticket.upload_id
+      ticket.upload_id,
+      status.error?.upgrade
     );
   }
   if (status.status !== "ready") throw new StillProcessingError(ticket.upload_id);

@@ -9,6 +9,7 @@ export {
   AbortError,
   ApiError,
   AppDropperClient,
+  planLimitMessage,
   uploadFile,
   userAgent,
   type BuildDetail,
@@ -18,6 +19,7 @@ export {
   type TokenIdentity,
   type UploadStatus,
   type UploadTicket,
+  type UpgradeInfo,
 } from "./client";
 export {
   DEFAULT_API_URL,

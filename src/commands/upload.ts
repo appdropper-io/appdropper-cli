@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import { boolFlag, flag, type ParsedArgs } from "../args";
 import { detectCi } from "../ci";
-import { AppDropperClient, ApiError } from "../client";
+import { AppDropperClient, ApiError, planLimitMessage } from "../client";
 import { apiUrl } from "../config";
 import { CliError, EXIT } from "../errors";
 import {
@@ -139,12 +139,15 @@ export function asCliError(err: unknown): CliError {
         : err.status === 429
           ? EXIT.RATE_LIMITED
           : EXIT.FAILURE;
-    return new CliError(err.message, code);
+    return new CliError(planLimitMessage(err.message, err.upgrade), code);
   }
   if (err instanceof CliError) return err;
   if (err instanceof BuildFileError) return new CliError(err.message, EXIT.USAGE);
   if (err instanceof TransferError) return new CliError(`Upload failed: ${err.message}`, EXIT.FAILURE);
-  if (err instanceof BuildProcessingError || err instanceof StillProcessingError) {
+  if (err instanceof BuildProcessingError) {
+    return new CliError(planLimitMessage(err.message, err.upgrade), EXIT.FAILURE);
+  }
+  if (err instanceof StillProcessingError) {
     return new CliError(err.message, EXIT.FAILURE);
   }
   return new CliError(err instanceof Error ? err.message : String(err), EXIT.FAILURE);

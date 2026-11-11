@@ -273,7 +273,11 @@ test("uploadBuild reports a rejected binary as BuildProcessingError with the ser
   const { server } = await fakeApi({
     upload_id: "up1",
     status: "error",
-    error: { code: "upgrade_required", message: "That would be app number 6." },
+    error: {
+      code: "upgrade_required",
+      message: "That would be app number 6.",
+      upgrade: { limit: "maxProjects", current_plan: "free", upgrade_to: "pro", upgrade_url: "https://appdropper.io/pricing" },
+    },
   });
   const { dir, file } = buildFile();
   try {
@@ -283,7 +287,8 @@ test("uploadBuild reports a rejected binary as BuildProcessingError with the ser
         err instanceof BuildProcessingError &&
         err.code === "upgrade_required" &&
         err.uploadId === "up1" &&
-        /app number 6/.test(err.message)
+        /app number 6/.test(err.message) &&
+        err.upgrade?.upgrade_to === "pro"
     );
   } finally {
     await server.close();
